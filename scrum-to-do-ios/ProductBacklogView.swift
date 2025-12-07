@@ -2,89 +2,101 @@ import SwiftUI
 
 struct ProductBacklogView: View {
     @ObservedObject var viewModel: TaskViewModel
-    let showMenu: () -> Void
     @State private var showingAddTask = false
     @State private var editingTask: Task?
-    @State private var editMode: EditMode = .inactive
     @State private var isReorderMode = false
-    
+
+    private var totalPoints: Int {
+        viewModel.tasks.reduce(0) { $0 + $1.weight.rawValue }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            // カスタムナビゲーションバー
-            HStack {
-                Button(action: showMenu) {
-                    Image(systemName: "line.3.horizontal")
-                        .foregroundColor(.white)
-                        .font(.title2)
-                }
-                
-                Spacer()
-                
-                Text("プロダクトバックログ")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                HStack {
-                    Button(action: {
-                        isReorderMode.toggle()
-                    }) {
-                        VStack(spacing: 2) {
-                            Image(systemName: "chevron.up")
-                                .font(.caption)
-                            Image(systemName: "chevron.down")
-                                .font(.caption)
-                        }
-                        .foregroundColor(isReorderMode ? .red : .white)
-                    }
-                    
-                    Button(action: {
-                        showingAddTask = true
-                    }) {
-                        Image(systemName: "plus")
-                            .foregroundColor(.white)
-                    }
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
-            .background(Color(red: 0.6, green: 0.5, blue: 0.4))
-            
-            // メインコンテンツ
-            List {
-                ForEach(viewModel.tasks) { task in
-                    TaskRowView(
-                        task: task,
-                        onEdit: {
-                            editingTask = task
-                        },
-                        onDragHandleTouch: {},
-                        onMoveUp: {
-                            viewModel.moveTaskUp(task)
-                        },
-                        onMoveDown: {
-                            viewModel.moveTaskDown(task)
-                        },
-                        isReorderMode: isReorderMode
+        NavigationStack {
+            ZStack {
+                AppColors.secondaryBackground
+                    .ignoresSafeArea()
+
+                if viewModel.tasks.isEmpty {
+                    EmptyStateView(
+                        icon: "tray",
+                        title: "バックログが空です",
+                        description: "タスクを追加して\nプロダクトバックログを作成しましょう",
+                        buttonTitle: "タスクを追加",
+                        buttonAction: { showingAddTask = true }
                     )
-                    .moveDisabled(false)
-                    .deleteDisabled(false)
-                    .onTapGesture {
-                        if !isReorderMode {
-                            editingTask = task
+                } else {
+                    VStack(spacing: 0) {
+                        // Stats header
+                        HStack(spacing: AppSpacing.md) {
+                            StatCard(
+                                title: "タスク数",
+                                value: "\(viewModel.tasks.count)",
+                                icon: "list.bullet",
+                                color: AppColors.primary
+                            )
+                            StatCard(
+                                title: "合計ポイント",
+                                value: "\(totalPoints)",
+                                subtitle: "pt",
+                                icon: "chart.bar.fill",
+                                color: AppColors.accent
+                            )
+                        }
+                        .padding(.horizontal, AppSpacing.lg)
+                        .padding(.vertical, AppSpacing.md)
+
+                        // Task list
+                        ScrollView {
+                            LazyVStack(spacing: AppSpacing.md) {
+                                ForEach(viewModel.tasks) { task in
+                                    TaskRowView(
+                                        task: task,
+                                        onEdit: { editingTask = task },
+                                        onDragHandleTouch: {},
+                                        onMoveUp: { viewModel.moveTaskUp(task) },
+                                        onMoveDown: { viewModel.moveTaskDown(task) },
+                                        isReorderMode: isReorderMode
+                                    )
+                                    .onTapGesture {
+                                        if !isReorderMode {
+                                            editingTask = task
+                                        }
+                                    }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                        Button(role: .destructive) {
+                                            if let index = viewModel.tasks.firstIndex(where: { $0.id == task.id }) {
+                                                viewModel.deleteTask(at: IndexSet(integer: index))
+                                            }
+                                        } label: {
+                                            Label("削除", systemImage: "trash")
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, AppSpacing.lg)
+                            .padding(.bottom, AppSpacing.xl)
                         }
                     }
-                    .listRowBackground(Color(.systemGray6))
                 }
-                .onDelete(perform: viewModel.deleteTask)
-                .onMove(perform: viewModel.moveTask)
             }
-            .environment(\.editMode, $editMode)
-            .listStyle(PlainListStyle())
-            .scrollContentBackground(.hidden)
-            .background(Color(.systemGray6))
+            .navigationTitle("バックログ")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack(spacing: AppSpacing.md) {
+                        Button(action: { isReorderMode.toggle() }) {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .foregroundColor(isReorderMode ? AppColors.accent : AppColors.primary)
+                        }
+
+                        Button(action: { showingAddTask = true }) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(AppColors.primaryGradient)
+                        }
+                    }
+                }
+            }
             .sheet(isPresented: $showingAddTask) {
                 TaskFormView(viewModel: viewModel)
             }
@@ -96,5 +108,5 @@ struct ProductBacklogView: View {
 }
 
 #Preview {
-    ProductBacklogView(viewModel: TaskViewModel(), showMenu: {})
+    ProductBacklogView(viewModel: TaskViewModel())
 }

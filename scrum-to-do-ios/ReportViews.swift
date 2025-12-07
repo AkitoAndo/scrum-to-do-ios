@@ -2,258 +2,167 @@ import SwiftUI
 
 struct ReportListView: View {
     @ObservedObject var viewModel: TaskViewModel
-    let showMenu: (() -> Void)?
     @State private var selectedSprint: Sprint? = nil
-    
+
     var body: some View {
-        VStack(spacing: 0) {
-            // カスタムナビゲーションバー
-            HStack {
-                if let showMenu = showMenu {
-                    Button(action: showMenu) {
-                        Image(systemName: "line.3.horizontal")
-                            .foregroundColor(.white)
-                            .font(.title2)
-                    }
-                }
-                
-                Spacer()
-                
-                Text("スプリントレポート")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                
-                Spacer()
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
-            .background(Color(red: 0.6, green: 0.5, blue: 0.4))
-            
-            // レポート一覧
-            if viewModel.pastSprints.isEmpty {
-                VStack {
-                    Spacer()
-                    
-                    Text("過去のスプリントがありません")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-                        .padding()
-                    
-                    Text("スプリントを完了すると、ここにレポートが表示されます")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                    
-                    Spacer()
-                }
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        ForEach(viewModel.pastSprints.reversed()) { sprint in
-                            Button(action: {
-                                selectedSprint = sprint
-                            }) {
-                                SprintReportRowView(sprint: sprint)
+        NavigationStack {
+            ZStack {
+                AppColors.secondaryBackground
+                    .ignoresSafeArea()
+
+                if viewModel.pastSprints.isEmpty {
+                    EmptyStateView(
+                        icon: "chart.bar.xaxis",
+                        title: "レポートがありません",
+                        description: "スプリントを完了すると\nここにレポートが表示されます"
+                    )
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: AppSpacing.md) {
+                            // Summary card
+                            summaryCard
+
+                            // Velocity chart
+                            VelocityChart(
+                                velocities: viewModel.pastThreeSprintVelocities,
+                                average: viewModel.averageVelocity
+                            )
+
+                            // Sprint list header
+                            HStack {
+                                Text("スプリント履歴")
+                                    .font(.headline)
+                                    .foregroundColor(AppColors.textPrimary)
+                                Spacer()
+                                Text("\(viewModel.pastSprints.count)件")
+                                    .font(.subheadline)
+                                    .foregroundColor(AppColors.textSecondary)
                             }
-                            .buttonStyle(PlainButtonStyle())
-                            .scaleEffect(selectedSprint?.id == sprint.id ? 0.95 : 1.0)
-                            .animation(.easeInOut(duration: 0.1), value: selectedSprint?.id == sprint.id)
+                            .padding(.top, AppSpacing.md)
+
+                            // Sprint list
+                            ForEach(viewModel.pastSprints.reversed()) { sprint in
+                                SprintReportCard(sprint: sprint)
+                                    .onTapGesture {
+                                        selectedSprint = sprint
+                                    }
+                            }
                         }
+                        .padding(.horizontal, AppSpacing.lg)
+                        .padding(.vertical, AppSpacing.md)
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
                 }
-                .background(Color(.systemGray6))
+            }
+            .navigationTitle("レポート")
+            .navigationBarTitleDisplayMode(.large)
+            .sheet(item: $selectedSprint) { sprint in
+                SprintDetailView(sprint: sprint)
             }
         }
-        .sheet(item: $selectedSprint) { sprint in
-            SprintDetailPopupView(sprint: sprint)
+    }
+
+    private var summaryCard: some View {
+        HStack(spacing: AppSpacing.lg) {
+            StatCard(
+                title: "完了スプリント",
+                value: "\(viewModel.pastSprints.count)",
+                icon: "checkmark.circle.fill",
+                color: AppColors.success
+            )
+
+            let totalCompleted = viewModel.pastSprints.reduce(0) { $0 + $1.completedPoints }
+            StatCard(
+                title: "総完了ポイント",
+                value: "\(totalCompleted)",
+                subtitle: "pt",
+                icon: "star.fill",
+                color: AppColors.accent
+            )
         }
     }
 }
 
-struct SprintReportRowView: View {
+struct SprintReportCard: View {
     let sprint: Sprint
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("スプリント")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
+        HStack(spacing: AppSpacing.lg) {
+            // Progress circle
+            CircularProgressView(
+                progress: sprint.completionRate,
+                size: 60,
+                lineWidth: 6
+            )
+
+            // Sprint info
+            VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                HStack {
+                    Text("スプリント")
+                        .font(.headline)
+                        .foregroundColor(AppColors.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(AppColors.textTertiary)
+                }
+
                 Text(sprint.formattedDateRange)
                     .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.gray)
-                    .font(.caption)
-            }
-            
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("完了率")
+                    .foregroundColor(AppColors.textSecondary)
+
+                HStack(spacing: AppSpacing.lg) {
+                    Label("\(sprint.completedPoints)/\(sprint.totalPoints) pt", systemImage: "checkmark.circle")
                         .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Text("\(Int(sprint.completionRate * 100))%")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.green)
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("ポイント")
+                        .foregroundColor(AppColors.success)
+
+                    Label(String(format: "%.1f pt/日", sprint.dailyVelocity), systemImage: "speedometer")
                         .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Text("\(sprint.completedPoints)/\(sprint.totalPoints)")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("平均ベロシティ")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Text("\(String(format: "%.1f", sprint.dailyVelocity))/日")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppColors.primary)
                 }
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.systemBackground))
-                .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(.systemGray4), lineWidth: 0.5)
-        )
+        .padding(AppSpacing.lg)
+        .background(AppColors.cardBackground)
+        .cornerRadius(AppCornerRadius.md)
+        .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
     }
 }
 
-struct SprintDetailPopupView: View {
+struct SprintDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let sprint: Sprint
     @State private var selectedTask: Task? = nil
-    
+
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // スプリント概要
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("スプリント概要")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        
-                        VStack(spacing: 8) {
-                            HStack {
-                                Text("期間:")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text(sprint.formattedDateRange)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            HStack {
-                                Text("合計ポイント:")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("\(sprint.totalPoints)")
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            HStack {
-                                Text("完了ポイント:")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("\(sprint.completedPoints)")
-                                    .foregroundColor(.green)
-                            }
-                            
-                            HStack {
-                                Text("完了率:")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("\(Int(sprint.completionRate * 100))%")
-                                    .foregroundColor(.green)
-                            }
-                            
-                            HStack {
-                                Text("平均ベロシティ:")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("\(String(format: "%.1f", sprint.dailyVelocity)) ポイント/日")
-                                    .foregroundColor(.blue)
-                            }
+            ZStack {
+                AppColors.secondaryBackground
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: AppSpacing.lg) {
+                        // Summary card
+                        sprintSummaryCard
+
+                        // Completed tasks
+                        taskSection(
+                            title: "完了タスク",
+                            tasks: sprint.completedTasks,
+                            isCompleted: true
+                        )
+
+                        // Incomplete tasks
+                        if !sprint.incompleteTasks.isEmpty {
+                            taskSection(
+                                title: "未完了タスク",
+                                tasks: sprint.incompleteTasks,
+                                isCompleted: false
+                            )
                         }
                     }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                    
-                    // 完了タスク
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("完了タスク (\(sprint.completedTasks.count)件)")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        
-                        if sprint.completedTasks.isEmpty {
-                            Text("完了したタスクはありません")
-                                .foregroundColor(.secondary)
-                                .padding()
-                        } else {
-                            ForEach(sprint.completedTasks) { task in
-                                Button(action: {
-                                    selectedTask = task
-                                }) {
-                                    TaskReportRowView(task: task, isCompleted: true)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                            }
-                        }
-                    }
-                    
-                    // 未完了タスク
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("未完了タスク (\(sprint.incompleteTasks.count)件)")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        
-                        if sprint.incompleteTasks.isEmpty {
-                            Text("未完了のタスクはありません")
-                                .foregroundColor(.secondary)
-                                .padding()
-                        } else {
-                            ForEach(sprint.incompleteTasks) { task in
-                                Button(action: {
-                                    selectedTask = task
-                                }) {
-                                    TaskReportRowView(task: task, isCompleted: false)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                            }
-                        }
-                    }
+                    .padding(.horizontal, AppSpacing.lg)
+                    .padding(.vertical, AppSpacing.md)
                 }
-                .padding()
             }
             .navigationTitle("スプリント詳細")
             .navigationBarTitleDisplayMode(.inline)
@@ -262,264 +171,200 @@ struct SprintDetailPopupView: View {
                     Button("閉じる") {
                         dismiss()
                     }
+                    .foregroundColor(AppColors.primary)
                 }
             }
-        }
-        .sheet(item: $selectedTask) { task in
-            TaskDetailPopupView(task: task)
+            .sheet(item: $selectedTask) { task in
+                TaskDetailView(task: task)
+            }
         }
     }
-}
 
-struct SprintDetailReportView: View {
-    let sprint: Sprint
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // カスタムナビゲーションバー
-            HStack {
-                Text("スプリント詳細")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                
+    private var sprintSummaryCard: some View {
+        VStack(spacing: AppSpacing.lg) {
+            HStack(spacing: AppSpacing.xl) {
+                CircularProgressView(
+                    progress: sprint.completionRate,
+                    size: 100,
+                    lineWidth: 10
+                )
+
+                VStack(alignment: .leading, spacing: AppSpacing.md) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                        Text("期間")
+                            .font(.caption)
+                            .foregroundColor(AppColors.textSecondary)
+                        Text(sprint.formattedDateRange)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(AppColors.textPrimary)
+                    }
+
+                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                        Text("ベロシティ")
+                            .font(.caption)
+                            .foregroundColor(AppColors.textSecondary)
+                        Text(String(format: "%.1f pt/日", sprint.dailyVelocity))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(AppColors.primary)
+                    }
+                }
+
                 Spacer()
             }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
-            .background(Color(red: 0.6, green: 0.5, blue: 0.4))
-            
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // スプリント概要
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("スプリント概要")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        
-                        VStack(spacing: 8) {
-                            HStack {
-                                Text("期間:")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text(sprint.formattedDateRange)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            HStack {
-                                Text("合計ポイント:")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("\(sprint.totalPoints)")
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            HStack {
-                                Text("完了ポイント:")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("\(sprint.completedPoints)")
-                                    .foregroundColor(.green)
-                            }
-                            
-                            HStack {
-                                Text("完了率:")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("\(Int(sprint.completionRate * 100))%")
-                                    .foregroundColor(.green)
-                            }
-                            
-                            HStack {
-                                Text("平均ベロシティ:")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("\(String(format: "%.1f", sprint.dailyVelocity)) ポイント/日")
-                                    .foregroundColor(.blue)
-                            }
+
+            HStack(spacing: AppSpacing.md) {
+                StatCard(
+                    title: "完了",
+                    value: "\(sprint.completedPoints)",
+                    subtitle: "pt",
+                    icon: "checkmark.circle.fill",
+                    color: AppColors.success
+                )
+                StatCard(
+                    title: "合計",
+                    value: "\(sprint.totalPoints)",
+                    subtitle: "pt",
+                    icon: "chart.bar.fill",
+                    color: AppColors.primary
+                )
+                StatCard(
+                    title: "タスク",
+                    value: "\(sprint.completedTasks.count + sprint.incompleteTasks.count)",
+                    subtitle: "件",
+                    icon: "list.bullet",
+                    color: AppColors.accent
+                )
+            }
+        }
+        .padding(AppSpacing.lg)
+        .background(AppColors.cardBackground)
+        .cornerRadius(AppCornerRadius.lg)
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
+    }
+
+    private func taskSection(title: String, tasks: [Task], isCompleted: Bool) -> some View {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            HStack {
+                Text(title)
+                    .font(.headline)
+                    .foregroundColor(AppColors.textPrimary)
+                Spacer()
+                Text("\(tasks.count)件")
+                    .font(.subheadline)
+                    .foregroundColor(AppColors.textSecondary)
+            }
+
+            if tasks.isEmpty {
+                Text(isCompleted ? "完了したタスクはありません" : "未完了のタスクはありません")
+                    .font(.subheadline)
+                    .foregroundColor(AppColors.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(AppSpacing.xl)
+            } else {
+                ForEach(tasks) { task in
+                    ReportTaskRow(task: task, isCompleted: isCompleted)
+                        .onTapGesture {
+                            selectedTask = task
                         }
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                    
-                    // 完了タスク
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("完了タスク (\(sprint.completedTasks.count)件)")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        
-                        if sprint.completedTasks.isEmpty {
-                            Text("完了したタスクはありません")
-                                .foregroundColor(.secondary)
-                                .padding()
-                        } else {
-                            ForEach(sprint.completedTasks) { task in
-                                TaskReportRowView(task: task, isCompleted: true)
-                            }
-                        }
-                    }
-                    
-                    // 未完了タスク
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("未完了タスク (\(sprint.incompleteTasks.count)件)")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        
-                        if sprint.incompleteTasks.isEmpty {
-                            Text("未完了のタスクはありません")
-                                .foregroundColor(.secondary)
-                                .padding()
-                        } else {
-                            ForEach(sprint.incompleteTasks) { task in
-                                TaskReportRowView(task: task, isCompleted: false)
-                            }
-                        }
-                    }
                 }
-                .padding()
             }
         }
     }
 }
 
-struct TaskReportRowView: View {
+struct ReportTaskRow: View {
     let task: Task
     let isCompleted: Bool
-    
+
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: AppSpacing.md) {
+            Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(isCompleted ? AppColors.success : AppColors.warning)
+                .font(.title3)
+
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
                 Text(task.title)
                     .font(.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                
+                    .foregroundColor(AppColors.textPrimary)
+
                 if !task.description.isEmpty {
                     Text(task.description)
                         .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
+                        .foregroundColor(AppColors.textSecondary)
+                        .lineLimit(1)
                 }
             }
-            
+
             Spacer()
-            
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("\(task.weight.rawValue)pt")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(isCompleted ? .green : .orange)
-                
-                Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(isCompleted ? .green : .orange)
-                    .font(.caption)
-            }
+
+            PointsBadge(points: task.weight.rawValue, isCompleted: isCompleted)
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(8)
+        .padding(AppSpacing.md)
+        .background(AppColors.cardBackground)
+        .cornerRadius(AppCornerRadius.sm)
+        .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 1)
     }
 }
 
-struct TaskDetailPopupView: View {
+struct TaskDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let task: Task
-    
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                // タスクタイトル
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("タスク詳細")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    Text(task.title)
-                        .font(.title3)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
-                
-                // タスク情報
-                VStack(alignment: .leading, spacing: 16) {
-                    if !task.description.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("説明")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                            
-                            Text(task.description)
-                                .font(.body)
-                                .foregroundColor(.primary)
-                        }
-                    }
-                    
-                    VStack(spacing: 12) {
-                        HStack {
-                            Text("ストーリーポイント:")
-                                .fontWeight(.medium)
-                            Spacer()
-                            Text("\(task.weight.rawValue)")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color(red: 0.6, green: 0.5, blue: 0.4))
-                                .cornerRadius(12)
-                        }
-                        
-                        HStack {
-                            Text("ステータス:")
-                                .fontWeight(.medium)
-                            Spacer()
-                            Text(task.status.rawValue)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        HStack {
-                            Text("完了状況:")
-                                .fontWeight(.medium)
-                            Spacer()
+            ZStack {
+                AppColors.secondaryBackground
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: AppSpacing.lg) {
+                        // Task header
+                        VStack(alignment: .leading, spacing: AppSpacing.md) {
                             HStack {
-                                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(task.isCompleted ? .green : .gray)
-                                Text(task.isCompleted ? "完了" : "未完了")
-                                    .foregroundColor(task.isCompleted ? .green : .gray)
-                            }
-                        }
-                        
-                        HStack {
-                            Text("作成日:")
-                                .fontWeight(.medium)
-                            Spacer()
-                            Text(task.createdAt, style: .date)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        if task.updatedAt != task.createdAt {
-                            HStack {
-                                Text("更新日:")
-                                    .fontWeight(.medium)
+                                Text(task.title)
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(AppColors.textPrimary)
                                 Spacer()
-                                Text(task.updatedAt, style: .date)
-                                    .foregroundColor(.secondary)
+                                PointsBadge(points: task.weight.rawValue, size: .large)
+                            }
+
+                            if !task.description.isEmpty {
+                                Text(task.description)
+                                    .font(.body)
+                                    .foregroundColor(AppColors.textSecondary)
                             }
                         }
+                        .padding(AppSpacing.lg)
+                        .background(AppColors.cardBackground)
+                        .cornerRadius(AppCornerRadius.md)
+
+                        // Task details
+                        VStack(spacing: 0) {
+                            DetailRow(label: "ステータス", value: task.status.rawValue)
+                            Divider()
+                            DetailRow(
+                                label: "完了状況",
+                                value: task.isCompleted ? "完了" : "未完了",
+                                valueColor: task.isCompleted ? AppColors.success : AppColors.warning
+                            )
+                            Divider()
+                            DetailRow(label: "作成日", value: task.createdAt.formatted(date: .abbreviated, time: .omitted))
+                            if task.updatedAt != task.createdAt {
+                                Divider()
+                                DetailRow(label: "更新日", value: task.updatedAt.formatted(date: .abbreviated, time: .omitted))
+                            }
+                        }
+                        .background(AppColors.cardBackground)
+                        .cornerRadius(AppCornerRadius.md)
                     }
+                    .padding(.horizontal, AppSpacing.lg)
+                    .padding(.vertical, AppSpacing.md)
                 }
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
-                
-                Spacer()
             }
-            .padding()
             .navigationTitle("タスク詳細")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -527,12 +372,33 @@ struct TaskDetailPopupView: View {
                     Button("閉じる") {
                         dismiss()
                     }
+                    .foregroundColor(AppColors.primary)
                 }
             }
         }
     }
 }
 
+struct DetailRow: View {
+    let label: String
+    let value: String
+    var valueColor: Color = AppColors.textPrimary
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundColor(AppColors.textSecondary)
+            Spacer()
+            Text(value)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(valueColor)
+        }
+        .padding(AppSpacing.lg)
+    }
+}
+
 #Preview {
-    ReportListView(viewModel: TaskViewModel(), showMenu: nil)
+    ReportListView(viewModel: TaskViewModel())
 }
