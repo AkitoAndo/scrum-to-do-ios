@@ -4,219 +4,285 @@ struct SprintPlanningView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var viewModel: TaskViewModel
     @State private var editingTask: Task?
-    
+
+    private var availableTasks: [Task] {
+        viewModel.tasks.filter { task in
+            !viewModel.planningSprintTasks.contains(where: { $0.id == task.id })
+        }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            // カスタムナビゲーションバー
-            HStack {
-                Button("キャンセル") {
-                    viewModel.clearPlanningSprint()
-                    dismiss()
+        NavigationStack {
+            ZStack {
+                AppColors.secondaryBackground
+                    .ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    // Velocity info card
+                    velocityInfoCard
+                        .padding(.horizontal, AppSpacing.lg)
+                        .padding(.top, AppSpacing.md)
+
+                    // Two column layout
+                    GeometryReader { geometry in
+                        HStack(spacing: AppSpacing.md) {
+                            // Product backlog column
+                            backlogColumn(width: (geometry.size.width - AppSpacing.md) / 2)
+
+                            // Sprint backlog column
+                            sprintColumn(width: (geometry.size.width - AppSpacing.md) / 2)
+                        }
+                        .padding(.horizontal, AppSpacing.lg)
+                        .padding(.vertical, AppSpacing.md)
+                    }
                 }
-                .foregroundColor(.white)
-                
-                Spacer()
-                
-                Text("スプリントプランニング")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                Button("開始") {
-                    viewModel.startSprint()
-                    dismiss()
-                }
-                .disabled(viewModel.planningSprintTasks.isEmpty)
-                .foregroundColor(.white)
             }
-            .padding()
-            .background(Color(red: 0.6, green: 0.5, blue: 0.4))
-            
-            // ベロシティ情報とプランニング総計
-            VStack(spacing: 12) {
-                HStack {
-                    Text("ベロシティ情報")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                    Spacer()
+            .navigationTitle("プランニング")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("キャンセル") {
+                        viewModel.clearPlanningSprint()
+                        dismiss()
+                    }
+                    .foregroundColor(AppColors.textSecondary)
                 }
-                
-                HStack(spacing: 16) {
-                    // 過去3回のベロシティ
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("過去のベロシティ")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        if viewModel.pastThreeSprintVelocities.isEmpty {
-                            Text("データなし")
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        viewModel.startSprint()
+                        dismiss()
+                    }) {
+                        Text("開始")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, AppSpacing.lg)
+                            .padding(.vertical, AppSpacing.sm)
+                            .background(
+                                viewModel.planningSprintTasks.isEmpty
+                                    ? Color.gray.opacity(0.5)
+                                    : AppColors.primaryGradient
+                            )
+                            .cornerRadius(AppCornerRadius.sm)
+                    }
+                    .disabled(viewModel.planningSprintTasks.isEmpty)
+                }
+            }
+            .sheet(item: $editingTask) { task in
+                TaskFormView(viewModel: viewModel, task: task)
+            }
+        }
+    }
+
+    private var velocityInfoCard: some View {
+        HStack(spacing: AppSpacing.lg) {
+            // Past velocities
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                Text("過去のベロシティ")
+                    .font(.caption)
+                    .foregroundColor(AppColors.textSecondary)
+
+                if viewModel.pastThreeSprintVelocities.isEmpty {
+                    Text("--")
+                        .font(.subheadline)
+                        .foregroundColor(AppColors.textTertiary)
+                } else {
+                    HStack(spacing: AppSpacing.xs) {
+                        ForEach(Array(viewModel.pastThreeSprintVelocities.enumerated()), id: \.offset) { _, velocity in
+                            Text(String(format: "%.1f", velocity))
                                 .font(.caption)
-                                .foregroundColor(.secondary)
-                        } else {
-                            ForEach(Array(viewModel.pastThreeSprintVelocities.enumerated()), id: \.offset) { index, velocity in
-                                Text("\(String(format: "%.1f", velocity)) pt/日")
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
-                            }
+                                .fontWeight(.medium)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(AppColors.primary.opacity(0.8))
+                                .cornerRadius(4)
                         }
-                    }
-                    
-                    Spacer()
-                    
-                    // 平均ベロシティ
-                    VStack(alignment: .center, spacing: 4) {
-                        Text("平均ベロシティ")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Text("\(String(format: "%.1f", viewModel.averageVelocity)) pt/日")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.blue)
-                    }
-                    
-                    Spacer()
-                    
-                    // 現在のプランニング総計
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("プランニング総計")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Text("\(viewModel.planningSprintTotalPoints) pt")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.green)
                     }
                 }
             }
-            .padding()
-            .background(Color(.systemGray6))
-            
-            HStack(spacing: 0) {
-                VStack {
-                    Text("プロダクトバックログ")
-                        .font(.headline)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .padding()
-                    
-                    List {
-                        ForEach(viewModel.tasks.filter { task in
-                            !viewModel.planningSprintTasks.contains(where: { $0.id == task.id })
-                        }) { task in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(task.title)
-                                        .font(.subheadline)
-                                        .foregroundColor(.primary)
-                                    
-                                    if !task.description.isEmpty {
-                                        Text(task.description)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(2)
-                                    }
+
+            Spacer()
+
+            // Average velocity
+            VStack(spacing: AppSpacing.xs) {
+                Text("平均")
+                    .font(.caption)
+                    .foregroundColor(AppColors.textSecondary)
+                Text(String(format: "%.1f", viewModel.averageVelocity))
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(AppColors.primary)
+                Text("pt/日")
+                    .font(.caption2)
+                    .foregroundColor(AppColors.textTertiary)
+            }
+
+            Spacer()
+
+            // Planning total
+            VStack(spacing: AppSpacing.xs) {
+                Text("計画合計")
+                    .font(.caption)
+                    .foregroundColor(AppColors.textSecondary)
+                Text("\(viewModel.planningSprintTotalPoints)")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(AppColors.success)
+                Text("pt")
+                    .font(.caption2)
+                    .foregroundColor(AppColors.textTertiary)
+            }
+        }
+        .padding(AppSpacing.md)
+        .background(AppColors.cardBackground)
+        .cornerRadius(AppCornerRadius.md)
+        .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
+    }
+
+    private func backlogColumn(width: CGFloat) -> some View {
+        VStack(spacing: AppSpacing.sm) {
+            // Header
+            HStack {
+                Image(systemName: "tray.full")
+                    .foregroundColor(AppColors.primary)
+                Text("バックログ")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Spacer()
+                Text("\(availableTasks.count)")
+                    .font(.caption)
+                    .foregroundColor(AppColors.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(AppColors.secondaryBackground)
+                    .cornerRadius(8)
+            }
+            .padding(.horizontal, AppSpacing.sm)
+
+            // Task list
+            ScrollView {
+                LazyVStack(spacing: AppSpacing.sm) {
+                    ForEach(availableTasks) { task in
+                        PlanningTaskRow(
+                            task: task,
+                            isInSprint: false,
+                            onAction: {
+                                withAnimation(.spring(response: 0.3)) {
+                                    viewModel.moveTaskToPlanningSprint(task)
                                 }
-                                
-                                Spacer()
-                                
-                                // Weight表示
-                                Text("\(task.weight.rawValue)")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color(red: 0.6, green: 0.5, blue: 0.4))
-                                    .cornerRadius(12)
-                                
-                                Button(action: {
-                                    withAnimation {
-                                        viewModel.moveTaskToPlanningSprint(task)
-                                    }
-                                }) {
-                                    Image(systemName: "plus.circle.fill")
-                                        .foregroundColor(.green)
-                                        .font(.title2)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                            }
-                            .padding(.vertical, 2)
-                            .onTapGesture {
-                                editingTask = task
-                            }
-                        }
-                        .listRowSeparator(.visible)
+                            },
+                            onTap: { editingTask = task }
+                        )
                     }
-                    .listStyle(PlainListStyle())
                 }
-                .frame(maxWidth: .infinity)
-                
-                VStack {
-                    Text("スプリントバックログ")
-                        .font(.headline)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .padding()
-                    
-                    List {
+                .padding(.horizontal, AppSpacing.xs)
+            }
+        }
+        .frame(width: width)
+        .padding(AppSpacing.sm)
+        .background(AppColors.cardBackground)
+        .cornerRadius(AppCornerRadius.md)
+    }
+
+    private func sprintColumn(width: CGFloat) -> some View {
+        VStack(spacing: AppSpacing.sm) {
+            // Header
+            HStack {
+                Image(systemName: "flame")
+                    .foregroundColor(AppColors.accent)
+                Text("スプリント")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Spacer()
+                Text("\(viewModel.planningSprintTasks.count)")
+                    .font(.caption)
+                    .foregroundColor(AppColors.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(AppColors.secondaryBackground)
+                    .cornerRadius(8)
+            }
+            .padding(.horizontal, AppSpacing.sm)
+
+            // Task list
+            if viewModel.planningSprintTasks.isEmpty {
+                VStack(spacing: AppSpacing.md) {
+                    Spacer()
+                    Image(systemName: "arrow.left")
+                        .font(.title)
+                        .foregroundColor(AppColors.textTertiary)
+                    Text("タスクを追加")
+                        .font(.caption)
+                        .foregroundColor(AppColors.textTertiary)
+                    Spacer()
+                }
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: AppSpacing.sm) {
                         ForEach(viewModel.planningSprintTasks) { task in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(task.title)
-                                        .font(.subheadline)
-                                        .foregroundColor(.primary)
-                                    
-                                    if !task.description.isEmpty {
-                                        Text(task.description)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(2)
-                                    }
-                                }
-                                
-                                Spacer()
-                                
-                                // Weight表示
-                                Text("\(task.weight.rawValue)")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color(red: 0.6, green: 0.5, blue: 0.4))
-                                    .cornerRadius(12)
-                                
-                                Button(action: {
-                                    withAnimation {
+                            PlanningTaskRow(
+                                task: task,
+                                isInSprint: true,
+                                onAction: {
+                                    withAnimation(.spring(response: 0.3)) {
                                         viewModel.moveTaskFromPlanningSprint(task)
                                     }
-                                }) {
-                                    Image(systemName: "minus.circle.fill")
-                                        .foregroundColor(.red)
-                                        .font(.title2)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                            }
-                            .padding(.vertical, 2)
-                            .onTapGesture {
-                                editingTask = task
-                            }
+                                },
+                                onTap: { editingTask = task }
+                            )
                         }
-                        .listRowSeparator(.visible)
                     }
-                    .listStyle(PlainListStyle())
+                    .padding(.horizontal, AppSpacing.xs)
                 }
-                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal)
         }
-        .sheet(item: $editingTask) { task in
-            TaskFormView(viewModel: viewModel, task: task)
+        .frame(width: width)
+        .padding(AppSpacing.sm)
+        .background(AppColors.cardBackground)
+        .cornerRadius(AppCornerRadius.md)
+    }
+}
+
+struct PlanningTaskRow: View {
+    let task: Task
+    let isInSprint: Bool
+    let onAction: () -> Void
+    let onTap: () -> Void
+
+    var body: some View {
+        HStack(spacing: AppSpacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title)
+                    .font(.subheadline)
+                    .foregroundColor(AppColors.textPrimary)
+                    .lineLimit(1)
+
+                if !task.description.isEmpty {
+                    Text(task.description)
+                        .font(.caption2)
+                        .foregroundColor(AppColors.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            PointsBadge(points: task.weight.rawValue, size: .small)
+
+            Button(action: onAction) {
+                Image(systemName: isInSprint ? "minus.circle.fill" : "plus.circle.fill")
+                    .font(.title3)
+                    .foregroundColor(isInSprint ? AppColors.error : AppColors.success)
+            }
+            .buttonStyle(PlainButtonStyle())
         }
+        .padding(.horizontal, AppSpacing.sm)
+        .padding(.vertical, AppSpacing.sm)
+        .background(AppColors.secondaryBackground)
+        .cornerRadius(AppCornerRadius.sm)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
     }
 }
 
