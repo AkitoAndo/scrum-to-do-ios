@@ -13,7 +13,7 @@ jobs:
 
     permissions:
       issues: write
-      contents: read
+      contents: write  # ブランチ削除のために必要
 
     steps:
       - name: Checkout repository
@@ -54,3 +54,13 @@ jobs:
           gh issue create --title "$TITLE" --body "$BODY"
 
           echo "Issue created successfully!"
+
+      - name: Delete branch after issue creation
+        if: startsWith(github.ref_name, 'claude/issue-')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          echo "Deleting branch: $BRANCH_NAME"
+          git push origin --delete "$BRANCH_NAME" || echo "Branch deletion failed (may already be deleted)"
+          echo "Branch cleanup completed!"
