@@ -3,7 +3,8 @@ name: Issue Proxy via Git Commit
 on:
   push:
     branches:
-      - '**'
+      - 'issue-proxy'      # 人間用: 固定ブランチ
+      - 'claude/issue-*'   # Claude用: issue-で始まるブランチ
 
 jobs:
   create-issue:
