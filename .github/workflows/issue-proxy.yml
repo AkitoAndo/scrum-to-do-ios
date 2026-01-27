@@ -1,0 +1,49 @@
+name: Issue Proxy via Git Commit
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  create-issue:
+    runs-on: ubuntu-latest
+    if: startsWith(github.event.head_commit.message, 'issue:')
+
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Parse commit message and create issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get the full commit message
+          FULL_MESSAGE="${{ github.event.head_commit.message }}"
+
+          # Extract title (remove 'issue:' prefix and trim)
+          TITLE=$(echo "$FULL_MESSAGE" | head -n 1 | sed 's/^issue:[[:space:]]*//')
+
+          # Extract body (everything after the first line, if exists)
+          BODY=$(echo "$FULL_MESSAGE" | tail -n +2)
+
+          # If no body provided, use commit details
+          if [ -z "$BODY" ]; then
+            BODY="Created via Issue Proxy workflow
+
+**Commit Details:**
+- SHA: ${{ github.sha }}
+- Author: ${{ github.event.head_commit.author.name }} <${{ github.event.head_commit.author.email }}>
+- Timestamp: ${{ github.event.head_commit.timestamp }}
+- Branch: ${{ github.ref_name }}"
+          fi
+
+          # Create the issue
+          echo "Creating issue with title: $TITLE"
+          gh issue create --title "$TITLE" --body "$BODY"
+
+          echo "Issue created successfully!"
