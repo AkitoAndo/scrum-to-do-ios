@@ -3,7 +3,7 @@ name: Issue Proxy via Git Commit
 on:
   push:
     branches:
-      - '**'
+      - 'issue-proxy'  # Issue作成専用ブランチのみで発火
 
 jobs:
   create-issue:
